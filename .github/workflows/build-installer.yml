@@ -39,7 +39,7 @@ jobs:
           python3 - <<'PY'
           import os,re
           assert re.fullmatch(r'v[0-9]+\.[0-9]+(?:\.[0-9]+)?',os.environ['RELEASE_TAG'])
-          assert re.fullmatch(r'Luma-[0-9.]+\.zip',os.environ['RELEASE_ARCHIVE'])
+          assert re.fullmatch(r'Luma-[0-9.]+-[0-9.]+\.zip',os.environ['RELEASE_ARCHIVE'])
           assert re.fullmatch(r'[0-9a-f]{64}',os.environ['EXPECTED_SHA256'])
           PY
       - name: Download and verify the application
