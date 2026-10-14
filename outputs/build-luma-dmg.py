@@ -29,6 +29,19 @@ def manifest(root):
             for p in root.rglob("*") if p.is_file() or p.is_symlink()}
 
 
+def require_clean_bundle_metadata(root):
+    # FinderInfo/resource forks invalidate modern app signatures even when all
+    # ordinary file bytes are identical. Check the bundle root as well as files.
+    forbidden = {"com.apple.FinderInfo", "com.apple.ResourceFork"}
+    # Python's os.listxattr is not available in all macOS Python distributions.
+    # xattr -rs reads names only and checks symlinks without following them.
+    attributes = run("/usr/bin/xattr", "-rs", str(root), capture=True).stdout.decode("utf-8")
+    for line in attributes.splitlines():
+        path, separator, name = line.rpartition(": ")
+        if separator and name in forbidden:
+            raise RuntimeError(f"Signed app has forbidden metadata at {path}: {name}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", type=Path, default=HERE / "Luma.app")
@@ -55,6 +68,7 @@ def main():
         if not p.is_file():
             raise ValueError(f"Missing installer artwork: {p.name}")
     run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(app))
+    require_clean_bundle_metadata(app)
     before = manifest(app)
     settings = {
         "format": "UDZO", "filesystem": "HFS+", "size": "128M",
@@ -69,7 +83,9 @@ def main():
         "show_pathbar": False, "show_sidebar": False, "show_tab_view": False,
         "default_view": "icon-view", "include_icon_view_settings": True,
         "include_list_view_settings": False, "show_icon_preview": False,
-        "hide_extensions": ["Luma.app"],
+        # Hiding the app extension would run SetFile on the signed bundle and
+        # add com.apple.FinderInfo. Keep all Finder decoration outside Luma.app.
+        "hide_extensions": [],
     }
     print(f"Luma {version} · Apple silicon · macOS 13+", flush=True)
     print("Developer ID signed; notarization still required." if developer_signed
@@ -95,6 +111,7 @@ def main():
             assert (volume / "Applications").is_symlink()
             assert os.readlink(volume / "Applications") == "/Applications"
             assert manifest(volume / "Luma.app") == before, "Packaged app changed"
+            require_clean_bundle_metadata(volume / "Luma.app")
             run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(volume / "Luma.app"))
             with DSStore.open(str(volume / ".DS_Store"), "r") as store:
                 assert store["Luma.app"]["Iloc"] == (190, 255)
@@ -112,6 +129,7 @@ def main():
         "version": version, "sha256": sha, "developer_id_signed": developer_signed,
         "notarized": False, "image_verified": True,
         "packaged_app_byte_identical": True, "signatures_verified": True,
+        "signed_bundle_metadata_clean": True,
         "finder_layout_metadata_verified": True,
         "note": "Finder appearance and first setup on a clean Mac require separate checks.",
     }, indent=2) + "\n")
